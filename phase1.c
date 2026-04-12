@@ -68,7 +68,16 @@ int parseCmds(char *str, char *result[], int cmdIndex[]) {
 }
 
 void runCmds(char *args[], int cmdIndex[], int cmdCount) {
+	if (cmdCount == 0) return;
+	int prev_fd = -1;
+	pid_t pids[cmdCount];
 	
+	for (int i=0; i<cmdCount; i++) {
+		if (i < cmdCount-1) {
+			int pipefd[2];
+			if (pipe(pipefd) == -1) {
+				perror("pipe");
+				`
 }
 
 int main() {
