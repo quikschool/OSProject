@@ -13,7 +13,276 @@
 #include <pwd.h>
 
 #define MAXPIPE 3
-#define MAXLEN 1024
+#define MAXLEN 4096
+
+int write_fd(int fd, char *str, int len) {
+	while (len > 0) {
+		int n = write(fd, str, len);
+		if (n < 0) return -1;
+		buf += n;
+		len -= n;
+	}
+	return 0;
+}
+
+int copy_fd(int in, int out) {
+	char buf[MAXLEN];
+	while (1) {
+		int n = read(in, buf, sizeof(buf));
+		if (n < 0) return -1;
+		if (n == 0) break;
+		if (write_fd(out, buf, n) != 0) return 1;
+	}
+	return 0;
+}
+
+void builtin_pwd(char **args) {
+	char buffer[PATH_MAX];
+	if (getcwd(buffer, sizeof(buffer)) == NULL) {
+		perror("pwd");
+		return;
+	}
+	puts(buffer);
+}
+
+void builtin_cd(char **args) {
+	char *path = args[1];
+
+	if (path == NULL) {
+		path = getenv("HOME");
+		if (path == NULL) path = "/";
+	}
+
+	if (chdir(path) != 0) perror("cd");
+}
+
+void builtin_echo(char **args) {
+	for (int i=1; args[i] != NULL; i++) {
+		if (write_fd(STDOUT_FILENO, args[i], strlen(args[i])) != 0) {
+			perror("echo");
+			return;
+		}
+		if (args[i + 1] != NULL) {
+			if (write_all(STDOUT_FILENO, " ", 1) != 0) {
+				perror("echo");
+				return;
+			}
+		}
+	}
+	if (write_all(STDOUT_FILENO, "\n", 1) != 0) perror("echo");
+}
+
+void builtin_mkdir(char **args) {
+	if (args[1] == NULL) {
+		fprintf(stderr, "mkdir: missing operand\n");
+		return;
+	}
+
+	for (int i=1; args[i] != NULL; i++) {
+		if (mkdir(args[i], 0777) != 0) {
+			perror("mkdir");
+			return;
+		}
+	}
+}
+
+void builtin_rmdir(char **args) {
+	if (args[1] == NULL) {
+		fprintf(stderr, "rmdir: missing operand\n");
+		return;
+	}
+
+	for (int i=1; args[i] != NULL; i++) {
+		if (rmdir(args[i]) != 0) {
+			perror("rmdir");
+			return;
+		}
+	}
+}
+
+void builtin_rm(char **args) {
+	if (args[1] == NULL) {
+		fprintf(stderr, "rm: missing operand\n");
+		return;
+	}
+
+	for (int i=1; argv[i] != NULL; i++) {
+		if (unlink(argv[i]) != 0) {
+			perror("rm");
+			return;
+		}
+	}
+}
+
+void builtin_touch(char **argv) {
+	if (argv[1] == NULL) {
+		fprintf(stderr, "touch: missing file operand\n");
+		return;
+	}
+
+	for (int i=1; argv[i] != NULL; i++) {
+		int fd = open(argv[i], O_WRONLY | O_CREAT, 0666);
+		if (fd < 0) {
+			perror("touch");
+			return;
+		}
+		close(fd);
+	}
+}
+
+void builtin_mv(char **argv) {
+	if (argv[1] == NULL || argv[2] == NULL || argv[3] != NULL) {
+		fprintf(stderr, "mv usage syntax: mv SOURCE DESTINATION\n");
+		return;
+	}
+
+	if (rename(argv[1], argv[2]) != 0) perror("mv");
+}
+
+void builtin_cp(char **argv) {
+	if (argv[1] == NULL || argv[2] == NULL || argv[3] != NULL) {
+		fprintf(stderr, "cp usage syntax: cp SOURCE DESTINATION\n");
+		return;
+	}
+
+	int in = open(argv[1], O_RDONLY);
+	if (in < 0) {
+		perror("cp");
+		return;
+	}
+
+	int out = open(argv[2], O_WRONLY | O_CREAT | O_TRUNC, 0666);
+	if (out < 0) {
+		perror("cp");
+		close(in);
+		return;
+	}
+
+	int rc = copy_fd(in, out);
+	if (rc != 0) perror("cp");
+
+	close(in);
+	close(out);
+}
+
+void builtin_cat(char **argv) {
+	if (argv[1] == NULL) {
+		if (copy_fd(STDIN_FILENO, STDOUT_FILENO) != 0) perror("cat");
+		return;
+	}
+
+	for (int i=1; argv[i] != NULL; i++) {
+		int fd = open(argv[i], O_RDONLY);
+		if (fd < 0) {
+			perror(argv[i]);
+			continue;
+		}
+		if (copy_fd(fd, STDOUT_FILENO) != 0) perror("cat");
+		close(fd);
+	}
+}
+
+void builtin_ls(char **argv) {
+	char *path = (argv[1] != NULL) ? argv[1] : ".";
+	DIR *dir = opendir(path);
+	if (!dir) {
+		perror("ls");
+		return;
+	}
+
+	struct dirent *entry;
+	int first = 1;
+	while ((entry = readdir(dir)) != NULL) {
+		if (!first) printf("  ");
+		printf("%s", entry->d_name);
+		first = 0;
+	}
+	printf("\n");
+	closedir(dir);
+}
+
+void builtin_chmod(char **argv) {
+	if (argv[1] == NULL || argv[2] == NULL || argv[3] != NULL) {
+		fprintf(stderr, "chmod usage syntax: chmod MODE FILE\n");
+		return;
+	}
+
+	char *end = NULL;
+	long mode = strtol(argv[1], &end, 8);
+	if (end == argv[1] || *end != '\0') {
+		fprintf(stderr, "chmod: invalid mode\n");
+		return;
+	}
+
+	if (chmod(argv[2], (mode_t)mode) != 0) perror("chmod");
+}
+
+void builtin_wc(char **argv) {
+	int fd;
+	if (argv[1] == NULL) {
+		fd = STDIN_FILENO;
+	} else if (argv[2] != NULL) {
+		fprintf(stderr, "wc: this simple version supports at most one file\n");
+		return;
+	} else {
+		fd = open(argv[1], O_RDONLY);
+		if (fd < 0) {
+			perror("wc");
+			return;
+		}
+	}
+
+	char buf[MAXLEN];
+	long lines = 0, words = 0, bytes = 0;
+	int in_word = 0;
+
+	while (1) {
+		int n = read(fd, buf, sizeof(buf));
+		if (n < 0) {
+			perror("wc");
+			if (fd != STDIN_FILENO) close(fd);
+			return;
+		}
+		if (n == 0) break;
+
+		bytes += n;
+		for (int i=0; i<n; i++) {
+			char c = buf[i];
+			if (c == '\n') lines++;
+			if (isspace(c)) {
+				in_word = 0;
+			} else if (!in_word) {
+				in_word = 1;
+				words++;
+			}
+		}
+	}
+
+	if (fd != STDIN_FILENO) close(fd);
+	printf("%ld %ld %ld\n", lines, words, bytes);
+}
+
+void builtin_uname(char **argv) {
+	char buffer[] = "COSC 354 Simple Command Line Interpreter\n";
+	if (write_fd(STDOUT_FILENO, buffer, strlen(buffer)) != 0) perror("uname");
+}
+
+void builtin_ln(char **argv) {
+	if (argv[1] == NULL || argv[2] == NULL || argv[3] != NULL) {
+		fprintf(stderr, "ln: usage: ln TARGET LINKNAME\n");
+		return;
+	}
+	if (link(argv[1], argv[2]) != 0) perror("ln");
+}
+
+void builtin_whoami(char **argv) {
+	struct passwd *pw = getpwuid(getuid());
+	if (!pw) {
+		perror("whoami");
+		return;
+	}
+	printf("%s\n", pw->pw_name);
+}
 
 int parseCmds(char *str, char *result[], int cmdIndex[]) {
 	// result is structured as {arg1, arg2, ..., NULL, arg1, arg2, ..., NULL}
@@ -177,4 +446,6 @@ void runCmds(char *args[], int cmdIndex[], int cmdCount) {
 }
 
 int main() {
+	
+}
 	
