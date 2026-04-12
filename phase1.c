@@ -73,11 +73,51 @@ void runCmds(char *args[], int cmdIndex[], int cmdCount) {
 	pid_t pids[cmdCount];
 	
 	for (int i=0; i<cmdCount; i++) {
+		// Looping over the commands in order
 		if (i < cmdCount-1) {
+			// Creating a pipe
 			int pipefd[2];
 			if (pipe(pipefd) == -1) {
 				perror("pipe");
-				`
+				if (prev_fd != -1) close(prev_read);
+				return;
+			}
+		}
+
+		// Creating a child process
+		pids[i] = fork();
+		if (pids[i] < 0) {
+			perror("fork");
+			if (prev_fd != -1) close(prev_fd);
+			if (i < cmdCount-1) {
+				close(pipefd[0]);
+				close(pipefd[1]);
+			}
+			return;
+		}
+
+		if (pids[i] == 0) {
+			// Child process
+			if (prev_fd != -1) {
+				// Read from previous command output
+				if (dup2(prev_fd, STDIN_FILENO) == -1) {
+					perror("dup2");
+					exit(1);
+				}
+			}
+			
+			if (i < cmdCount-1) {
+				// Redirect output of current command to pipe
+				close(pipefd[0]);
+				if (dup2(pipefd[1], STDOUT_FILENO) == -1) {
+					perror("dup2");
+					exit(1);
+				}
+				close(pipefd[1]);
+			}
+
+			// prev_fd has been redirected so it can be closed
+			if (prev_fd != -1) close(prev_fd);
 }
 
 int main() {
