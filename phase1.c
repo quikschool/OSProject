@@ -19,7 +19,7 @@ int write_fd(int fd, char *str, int len) {
 	while (len > 0) {
 		int n = write(fd, str, len);
 		if (n < 0) return -1;
-		buf += n;
+		str += n;
 		len -= n;
 	}
 	return 0;
@@ -63,13 +63,13 @@ void builtin_echo(char **args) {
 			return;
 		}
 		if (args[i + 1] != NULL) {
-			if (write_all(STDOUT_FILENO, " ", 1) != 0) {
+			if (write_fd(STDOUT_FILENO, " ", 1) != 0) {
 				perror("echo");
 				return;
 			}
 		}
 	}
-	if (write_all(STDOUT_FILENO, "\n", 1) != 0) perror("echo");
+	if (write_fd(STDOUT_FILENO, "\n", 1) != 0) perror("echo");
 }
 
 void builtin_mkdir(char **args) {
@@ -106,22 +106,22 @@ void builtin_rm(char **args) {
 		return;
 	}
 
-	for (int i=1; argv[i] != NULL; i++) {
-		if (unlink(argv[i]) != 0) {
+	for (int i=1; args[i] != NULL; i++) {
+		if (unlink(args[i]) != 0) {
 			perror("rm");
 			return;
 		}
 	}
 }
 
-void builtin_touch(char **argv) {
-	if (argv[1] == NULL) {
+void builtin_touch(char **args) {
+	if (args[1] == NULL) {
 		fprintf(stderr, "touch: missing file operand\n");
 		return;
 	}
 
-	for (int i=1; argv[i] != NULL; i++) {
-		int fd = open(argv[i], O_WRONLY | O_CREAT, 0666);
+	for (int i=1; args[i] != NULL; i++) {
+		int fd = open(args[i], O_WRONLY | O_CREAT, 0666);
 		if (fd < 0) {
 			perror("touch");
 			return;
@@ -130,28 +130,28 @@ void builtin_touch(char **argv) {
 	}
 }
 
-void builtin_mv(char **argv) {
-	if (argv[1] == NULL || argv[2] == NULL || argv[3] != NULL) {
+void builtin_mv(char **args) {
+	if (args[1] == NULL || args[2] == NULL || args[3] != NULL) {
 		fprintf(stderr, "mv usage syntax: mv SOURCE DESTINATION\n");
 		return;
 	}
 
-	if (rename(argv[1], argv[2]) != 0) perror("mv");
+	if (rename(args[1], args[2]) != 0) perror("mv");
 }
 
-void builtin_cp(char **argv) {
-	if (argv[1] == NULL || argv[2] == NULL || argv[3] != NULL) {
+void builtin_cp(char **args) {
+	if (args[1] == NULL || args[2] == NULL || args[3] != NULL) {
 		fprintf(stderr, "cp usage syntax: cp SOURCE DESTINATION\n");
 		return;
 	}
 
-	int in = open(argv[1], O_RDONLY);
+	int in = open(args[1], O_RDONLY);
 	if (in < 0) {
 		perror("cp");
 		return;
 	}
 
-	int out = open(argv[2], O_WRONLY | O_CREAT | O_TRUNC, 0666);
+	int out = open(args[2], O_WRONLY | O_CREAT | O_TRUNC, 0666);
 	if (out < 0) {
 		perror("cp");
 		close(in);
@@ -165,16 +165,16 @@ void builtin_cp(char **argv) {
 	close(out);
 }
 
-void builtin_cat(char **argv) {
-	if (argv[1] == NULL) {
+void builtin_cat(char **args) {
+	if (args[1] == NULL) {
 		if (copy_fd(STDIN_FILENO, STDOUT_FILENO) != 0) perror("cat");
 		return;
 	}
 
-	for (int i=1; argv[i] != NULL; i++) {
-		int fd = open(argv[i], O_RDONLY);
+	for (int i=1; args[i] != NULL; i++) {
+		int fd = open(args[i], O_RDONLY);
 		if (fd < 0) {
-			perror(argv[i]);
+			perror(args[i]);
 			continue;
 		}
 		if (copy_fd(fd, STDOUT_FILENO) != 0) perror("cat");
@@ -182,8 +182,8 @@ void builtin_cat(char **argv) {
 	}
 }
 
-void builtin_ls(char **argv) {
-	char *path = (argv[1] != NULL) ? argv[1] : ".";
+void builtin_ls(char **args) {
+	char *path = (args[1] != NULL) ? args[1] : ".";
 	DIR *dir = opendir(path);
 	if (!dir) {
 		perror("ls");
@@ -201,31 +201,31 @@ void builtin_ls(char **argv) {
 	closedir(dir);
 }
 
-void builtin_chmod(char **argv) {
-	if (argv[1] == NULL || argv[2] == NULL || argv[3] != NULL) {
+void builtin_chmod(char **args) {
+	if (args[1] == NULL || args[2] == NULL || args[3] != NULL) {
 		fprintf(stderr, "chmod usage syntax: chmod MODE FILE\n");
 		return;
 	}
 
 	char *end = NULL;
-	long mode = strtol(argv[1], &end, 8);
-	if (end == argv[1] || *end != '\0') {
+	long mode = strtol(args[1], &end, 8);
+	if (end == args[1] || *end != '\0') {
 		fprintf(stderr, "chmod: invalid mode\n");
 		return;
 	}
 
-	if (chmod(argv[2], (mode_t)mode) != 0) perror("chmod");
+	if (chmod(args[2], (mode_t)mode) != 0) perror("chmod");
 }
 
-void builtin_wc(char **argv) {
+void builtin_wc(char **args) {
 	int fd;
-	if (argv[1] == NULL) {
+	if (args[1] == NULL) {
 		fd = STDIN_FILENO;
-	} else if (argv[2] != NULL) {
+	} else if (args[2] != NULL) {
 		fprintf(stderr, "wc: this simple version supports at most one file\n");
 		return;
 	} else {
-		fd = open(argv[1], O_RDONLY);
+		fd = open(args[1], O_RDONLY);
 		if (fd < 0) {
 			perror("wc");
 			return;
@@ -262,20 +262,20 @@ void builtin_wc(char **argv) {
 	printf("%ld %ld %ld\n", lines, words, bytes);
 }
 
-void builtin_uname(char **argv) {
+void builtin_uname(char **args) {
 	char buffer[] = "COSC 354 Simple Command Line Interpreter\n";
 	if (write_fd(STDOUT_FILENO, buffer, strlen(buffer)) != 0) perror("uname");
 }
 
-void builtin_ln(char **argv) {
-	if (argv[1] == NULL || argv[2] == NULL || argv[3] != NULL) {
+void builtin_ln(char **args) {
+	if (args[1] == NULL || args[2] == NULL || args[3] != NULL) {
 		fprintf(stderr, "ln: usage: ln TARGET LINKNAME\n");
 		return;
 	}
-	if (link(argv[1], argv[2]) != 0) perror("ln");
+	if (link(args[1], args[2]) != 0) perror("ln");
 }
 
-void builtin_whoami(char **argv) {
+void builtin_whoami(char **args) {
 	struct passwd *pw = getpwuid(getuid());
 	if (!pw) {
 		perror("whoami");
@@ -350,13 +350,14 @@ void runCmds(char *args[], int cmdIndex[], int cmdCount) {
 	pid_t pids[cmdCount];
 	
 	for (int i=0; i<cmdCount; i++) {
+		// Creating a pipe
+		int pipefd[2];
+
 		// Looping over the commands in order
 		if (i < cmdCount-1) {
-			// Creating a pipe
-			int pipefd[2];
 			if (pipe(pipefd) == -1) {
 				perror("pipe");
-				if (prev_fd != -1) close(prev_read);
+				if (prev_fd != -1) close(prev_fd);
 				return;
 			}
 		}
@@ -399,7 +400,7 @@ void runCmds(char *args[], int cmdIndex[], int cmdCount) {
 
 			// Check for commands which can't be piped
 			if (strcmp(currentArgs[0], "cd") == 0 || strcmp(currentArgs[0], "exit") == 0) {
-				fprintf(stderr, %s: must be run as a single command\n", currentArgs[0]);
+				fprintf(stderr, "%s: must be run as a single command\n", currentArgs[0]);
 				exit(1);
 			}
 			
@@ -446,6 +447,40 @@ void runCmds(char *args[], int cmdIndex[], int cmdCount) {
 }
 
 int main() {
-	
+	char buffer[MAXLEN];
+
+	while (1) {
+		printf("shell> ");
+		if (fgets(buffer, sizeof(buffer), stdin) == NULL) {
+			perror("fgets");
+			break;
+		}
+
+		buffer[strcspn(buffer, "\n")] = '\0';
+
+		if (buffer[0] == '\0') continue;
+
+		int length = strlen(buffer);
+		char *args[length];
+		int cmdIndex[MAXPIPE+1];
+		int cmdCount = parseCmds(buffer, args, cmdIndex);
+		if (cmdCount < 0) {
+			fprintf(stderr, "parse error\n");
+			continue;
+		}
+
+		char **arg0 = &args[cmdIndex[0]];
+
+		if (cmdCount == 1) {
+			if (strcmp(arg0[0], "exit") == 0) break;
+			if (strcmp(arg0[0], "cd") == 0) {
+				builtin_cd(arg0);
+				continue;
+			}
+		}
+		
+		runCmds(args, cmdIndex, cmdCount);
+	}
+	return 0;
 }
 	
