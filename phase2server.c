@@ -11,28 +11,18 @@
 #include <sys/types.h>
 #include <limits.h>
 #include <pwd.h>
+#include <arpa/inet.h>
 
 #define MAXPIPE 3
 #define MAXLEN 4096
-
-int write_fd(int fd, char *str, int len) {
-	while (len > 0) {
-		int n = write(fd, str, len);
-		if (n < 0) return -1;
-		str += n;
-		len -= n;
-	}
-	return 0;
-}
+#define PORT 8080
 
 int copy_fd(int in, int out) {
 	char buf[MAXLEN];
-	while (1) {
-		int n = read(in, buf, sizeof(buf));
-		if (n < 0) return -1;
-		if (n == 0) break;
-		if (write_fd(out, buf, n) != 0) return 1;
-	}
+	int n = read(in, buf, sizeof(buf));
+	if (n < 0) return -1;
+	if (n == 0) return 0;
+	if (write(out, buf, n) < 0) return -1;
 	return 0;
 }
 
@@ -42,7 +32,11 @@ void builtin_pwd(char **args) {
 		perror("pwd");
 		return;
 	}
-	puts(buffer);
+	if (write(STDOUT_FILENO, buffer, strlen(buffer)) < 0) {
+		perror("pwd");
+		return;
+	}
+	if (write(STDOUT_FILENO, "\n", 1) < 0) perror("pwd");
 }
 
 void builtin_cd(char **args) {
@@ -58,23 +52,23 @@ void builtin_cd(char **args) {
 
 void builtin_echo(char **args) {
 	for (int i=1; args[i] != NULL; i++) {
-		if (write_fd(STDOUT_FILENO, args[i], strlen(args[i])) != 0) {
+		if (write(STDOUT_FILENO, args[i], strlen(args[i])) < 0) {
 			perror("echo");
 			return;
 		}
 		if (args[i + 1] != NULL) {
-			if (write_fd(STDOUT_FILENO, " ", 1) != 0) {
+			if (write(STDOUT_FILENO, " ", 1) < 0) {
 				perror("echo");
 				return;
 			}
 		}
 	}
-	if (write_fd(STDOUT_FILENO, "\n", 1) != 0) perror("echo");
+	if (write(STDOUT_FILENO, "\n", 1) < 0) perror("echo");
 }
 
 void builtin_mkdir(char **args) {
 	if (args[1] == NULL) {
-		fprintf(stderr, "mkdir: missing operand\n");
+		write(STDERR_FILENO, "mkdir: missing operand\n", 23);
 		return;
 	}
 
@@ -88,7 +82,7 @@ void builtin_mkdir(char **args) {
 
 void builtin_rmdir(char **args) {
 	if (args[1] == NULL) {
-		fprintf(stderr, "rmdir: missing operand\n");
+		write(STDERR_FILENO, "rmdir: missing operand\n", 23);
 		return;
 	}
 
@@ -102,7 +96,7 @@ void builtin_rmdir(char **args) {
 
 void builtin_rm(char **args) {
 	if (args[1] == NULL) {
-		fprintf(stderr, "rm: missing operand\n");
+		write(STDERR_FILENO, "rm: missing operand\n", 20);
 		return;
 	}
 
@@ -116,7 +110,7 @@ void builtin_rm(char **args) {
 
 void builtin_touch(char **args) {
 	if (args[1] == NULL) {
-		fprintf(stderr, "touch: missing file operand\n");
+		write(STDERR_FILENO, "touch: missing file operand\n", 28);
 		return;
 	}
 
@@ -132,7 +126,7 @@ void builtin_touch(char **args) {
 
 void builtin_mv(char **args) {
 	if (args[1] == NULL || args[2] == NULL || args[3] != NULL) {
-		fprintf(stderr, "mv usage syntax: mv SOURCE DESTINATION\n");
+		write(STDERR_FILENO, "mv usage syntax: mv SOURCE DESTINATION\n", 39);
 		return;
 	}
 
@@ -141,7 +135,7 @@ void builtin_mv(char **args) {
 
 void builtin_cp(char **args) {
 	if (args[1] == NULL || args[2] == NULL || args[3] != NULL) {
-		fprintf(stderr, "cp usage syntax: cp SOURCE DESTINATION\n");
+		write(STDERR_FILENO, "cp usage syntax: cp SOURCE DESTINATION\n", 39);
 		return;
 	}
 
@@ -193,24 +187,24 @@ void builtin_ls(char **args) {
 	struct dirent *entry;
 	int first = 1;
 	while ((entry = readdir(dir)) != NULL) {
-		if (!first) printf("  ");
-		printf("%s", entry->d_name);
+		if (!first) write(STDOUT_FILENO, " ", 1);
+		write(STDOUT_FILENO, entry->d_name, strlen(entry->d_name));
 		first = 0;
 	}
-	printf("\n");
+	write(STDOUT_FILENO, "\n", 1);
 	closedir(dir);
 }
 
 void builtin_chmod(char **args) {
 	if (args[1] == NULL || args[2] == NULL || args[3] != NULL) {
-		fprintf(stderr, "chmod usage syntax: chmod MODE FILE\n");
+		write(STDERR_FILENO, "chmod usage syntax: chmod MODE FILE\n", 37);
 		return;
 	}
 
 	char *end = NULL;
 	long mode = strtol(args[1], &end, 8);
 	if (end == args[1] || *end != '\0') {
-		fprintf(stderr, "chmod: invalid mode\n");
+		write(STDERR_FILENO, "chmod: invalid mode\n", 20);
 		return;
 	}
 
@@ -222,7 +216,7 @@ void builtin_wc(char **args) {
 	if (args[1] == NULL) {
 		fd = STDIN_FILENO;
 	} else if (args[2] != NULL) {
-		fprintf(stderr, "wc: this simple version supports at most one file\n");
+		write(STDERR_FILENO, "wc: this simple version supports at most one file\n", 50);
 		return;
 	} else {
 		fd = open(args[1], O_RDONLY);
@@ -264,12 +258,12 @@ void builtin_wc(char **args) {
 
 void builtin_uname(char **args) {
 	char buffer[] = "COSC 354 Simple Command Line Interpreter\n";
-	if (write_fd(STDOUT_FILENO, buffer, strlen(buffer)) != 0) perror("uname");
+	if (write(STDOUT_FILENO, buffer, strlen(buffer)) < 0) perror("uname");
 }
 
 void builtin_ln(char **args) {
 	if (args[1] == NULL || args[2] == NULL || args[3] != NULL) {
-		fprintf(stderr, "ln: usage: ln TARGET LINKNAME\n");
+		write(STDERR_FILENO, "ln: usage: ln TARGET LINKNAME\n", 31);
 		return;
 	}
 	if (link(args[1], args[2]) != 0) perror("ln");
@@ -281,7 +275,8 @@ void builtin_whoami(char **args) {
 		perror("whoami");
 		return;
 	}
-	printf("%s\n", pw->pw_name);
+	write(STDOUT_FILENO, pw->pw_name, strlen(pw->pw_name));
+	write(STDOUT_FILENO, "\n", 1);
 }
 
 int parseCmds(char *str, char *result[], int cmdIndex[]) {
@@ -344,16 +339,16 @@ int parseCmds(char *str, char *result[], int cmdIndex[]) {
 	return cmds;
 }
 
-void runCmds(char *args[], int cmdIndex[], int cmdCount) {
+void runCmdsRemote(char *args[], int cmdIndex[], int cmdCount, int sockfd) {
 	if (cmdCount == 0) return;
 	int prev_fd = -1;
 	pid_t pids[cmdCount];
 	
+	// Looping over the commands in order
 	for (int i=0; i<cmdCount; i++) {
 		// Creating a pipe
 		int pipefd[2];
 
-		// Looping over the commands in order
 		if (i < cmdCount-1) {
 			if (pipe(pipefd) == -1) {
 				perror("pipe");
@@ -381,7 +376,7 @@ void runCmds(char *args[], int cmdIndex[], int cmdCount) {
 				// Read from previous command output
 				if (dup2(prev_fd, STDIN_FILENO) == -1) {
 					perror("dup2");
-					exit(1);
+					exit(EXIT_FAILURE);
 				}
 			}
 			
@@ -390,18 +385,31 @@ void runCmds(char *args[], int cmdIndex[], int cmdCount) {
 				close(pipefd[0]);
 				if (dup2(pipefd[1], STDOUT_FILENO) == -1) {
 					perror("dup2");
-					exit(1);
+					exit(EXIT_FAILURE);
 				}
 				close(pipefd[1]);
+			} else {
+				if (dup2(sockfd, STDOUT_FILENO) == -1) {
+					perror("dup2");
+					exit(EXIT_FAILURE);
+				}
+				if (dup2(sockfd, STDERR_FILENO) == -1) {
+					perror("dup2");
+					exit(EXIT_FAILURE);
+				}
 			}
 
 			// prev_fd has been redirected so it can be closed
 			if (prev_fd != -1) close(prev_fd);
 
+			// sockfd has been redirected or isn't needed in this child so it is closed
+			close(sockfd);
+
 			// Check for commands which can't be piped
 			if (strcmp(currentArgs[0], "cd") == 0 || strcmp(currentArgs[0], "exit") == 0) {
-				fprintf(stderr, "%s: must be run as a single command\n", currentArgs[0]);
-				exit(1);
+				write(STDERR_FILENO, currentArgs[0], strlen(currentArgs[0]));
+				write(STDERR_FILENO, ": must be run as a single command\n", 35);
+				exit(EXIT_FAILURE);
 			}
 			
 			if (strcmp(currentArgs[0], "pwd") == 0) builtin_pwd(currentArgs);
@@ -423,8 +431,13 @@ void runCmds(char *args[], int cmdIndex[], int cmdCount) {
 				// Not a built-in command
 				execvp(currentArgs[0], currentArgs);
 				perror(currentArgs[0]);
+
+				// execvp call failed
+				write(STDOUT_FILENO, currentArgs[0], strlen(currentArgs[0]));
+				write(STDOUT_FILENO, ": command not found or failed\n", 30);
+				exit(EXIT_FAILURE);
 			}
-			exit(1);
+			exit(EXIT_SUCCESS);
 		}
 		
 		// Closing the fd from the previous command as it is no longer needed
@@ -446,13 +459,20 @@ void runCmds(char *args[], int cmdIndex[], int cmdCount) {
 	}
 }
 
-int main() {
+void shell(int sockfd) {
 	char buffer[MAXLEN];
+	dup2(sockfd, STDOUT_FILENO);
+	dup2(sockfd, STDERR_FILENO);
 
 	while (1) {
-		printf("shell> ");
-		if (fgets(buffer, sizeof(buffer), stdin) == NULL) {
-			perror("fgets");
+		int n = read(sockfd, buffer, sizeof(buffer) - 1);
+		if (n < 0) {
+			perror("read");
+			break;
+		}
+		if (n == 0) {
+			// Client closed the connection
+			printf("Client closed the connection\n");
 			break;
 		}
 
@@ -465,7 +485,7 @@ int main() {
 		int cmdIndex[MAXPIPE+1];
 		int cmdCount = parseCmds(buffer, args, cmdIndex);
 		if (cmdCount < 0) {
-			fprintf(stderr, "parse error\n");
+			write(sockfd, "parse error\n", 12);
 			continue;
 		}
 
@@ -479,8 +499,51 @@ int main() {
 			}
 		}
 		
-		runCmds(args, cmdIndex, cmdCount);
+		runCmdsRemote(args, cmdIndex, cmdCount, sockfd);
 	}
+}
+
+int main() {
+	// Create a socket
+	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd < 0) {
+		perror("socket");
+		return 1;
+	}
+
+	// Define server address
+	struct sockaddr_in server_addr;
+	int addrlen = sizeof(server_addr);
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_port = htons(PORT);
+	server_addr.sin_addr.s_addr = INADDR_ANY;
+
+	// Bind the socket to the address
+	if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+		perror("bind");
+		close(sockfd);
+		return 1;
+	}
+
+	// Listen for incoming connections
+	if (listen(sockfd, 3) < 0) {
+		perror("listen");
+		close(sockfd);
+		return 1;
+	}
+
+	// Accept incoming connections
+	int client_sockfd;
+	if ((client_sockfd = accept(sockfd, (struct sockaddr *)&server_addr, &addrlen)) < 0) {
+		perror("accept");
+		close(sockfd);
+		return 1;
+	}
+
+	// Start the shell
+	shell(client_sockfd);
+
+	// Close the socket
+	close(client_sockfd);
 	return 0;
 }
-	
