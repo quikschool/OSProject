@@ -16,6 +16,9 @@
 #define MAXPIPE 3
 #define MAXLEN 4096
 #define PORT 8080
+#define END_MARKER "SERVER_OUT_DONE\n"
+
+int running = 1;
 
 int copy_fd(int in, int out) {
 	char buf[MAXLEN];
@@ -24,10 +27,12 @@ int copy_fd(int in, int out) {
 		int n = read(in, buf, sizeof(buf));
 		if (n < 0) return -1;
 		if (n == 0) return 0;
+		int total_written = 0;
 		while (n > 0) {
-			int m = write(out, buf, n);
+			int m = write(out, buf + total_written, n);
 			if (m < 0) return -1;
 			n -= m;
+			total_written += m;
 		}
 	}
 	return 0;
@@ -485,7 +490,10 @@ void shell(int sockfd) {
 
 		buffer[strcspn(buffer, "\n")] = '\0';
 
-		if (buffer[0] == '\0') continue;
+		if (buffer[0] == '\0') {
+			write(sockfd, END_MARKER, strlen(END_MARKER));
+			continue;
+		}
 
 		int length = strlen(buffer);
 		char *args[length];
@@ -493,20 +501,31 @@ void shell(int sockfd) {
 		int cmdCount = parseCmds(buffer, args, cmdIndex);
 		if (cmdCount < 0) {
 			write(sockfd, "parse error\n", 12);
+			write(sockfd, END_MARKER, strlen(END_MARKER));
 			continue;
 		}
 
 		char **arg0 = &args[cmdIndex[0]];
 
 		if (cmdCount == 1) {
-			if (strcmp(arg0[0], "exit") == 0) break;
+			if (strcmp(arg0[0], "exit") == 0) {
+				write(sockfd, END_MARKER, strlen(END_MARKER));
+				break;
+			}
+			if (strcmp(arg0[0], "shutdown") == 0) {
+				running = 0;
+				write(sockfd, END_MARKER, strlen(END_MARKER));
+				break;
+			}
 			if (strcmp(arg0[0], "cd") == 0) {
 				builtin_cd(arg0);
+				write(sockfd, END_MARKER, strlen(END_MARKER));
 				continue;
 			}
 		}
 		
 		runCmdsRemote(args, cmdIndex, cmdCount, sockfd);
+		write(sockfd, END_MARKER, strlen(END_MARKER));
 	}
 }
 
@@ -539,7 +558,7 @@ int main() {
 			return 1;
 		}
 
-	while (1) {
+	while (running) {
 		// Accept incoming connections
 		int client_sockfd;
 		if ((client_sockfd = accept(sockfd, (struct sockaddr *)&server_addr, &addrlen)) < 0) {
@@ -554,6 +573,7 @@ int main() {
 		// Close the socket
 		close(client_sockfd);
 	}
+
 	close(sockfd);
 	return 0;
 }

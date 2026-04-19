@@ -5,9 +5,12 @@
 #include <arpa/inet.h>
 
 #define PORT 8080
+#define MAXLEN 4096
+#define END_MARKER "SERVER_OUT_DONE\n"
 
 void client_shell(int sockfd) {
-    char buffer[1024];
+    char buffer[MAXLEN];
+    char response[MAXLEN];
     while (1) {
         printf("shell> ");
 
@@ -21,20 +24,37 @@ void client_shell(int sockfd) {
         }
 
         // Read command output from server
-        int n = read(sockfd, buffer, sizeof(buffer) - 1);
-        if (n < 0) {
-            perror("read");
-            break;
-        }
-        if (n == 0) {
-            // Server closed the connection
-            printf("Server closed the connection\n");
-            break;
-        }
-        buffer[n] = '\0';
+        int total_read = 0;
+        response[0] = '\0';
+        while (1) {
+            int n = read(sockfd, buffer, sizeof(buffer) - 1);
+            if (n < 0) {
+                perror("read");
+                return;
+            }
+            if (n == 0) {
+                // Server closed the connection
+                printf("Server closed the connection\n");
+                return;
+            }
+            if (total_read + n >= sizeof(response) - 1) {
+                fprintf(stderr, "Output too long\n");
+                break;
+            }
+            memcpy(response + total_read, buffer, n);
+            total_read += n;
+            response[total_read] = '\0';
 
+            // Check for end marker
+            char *marker_pos = strstr(response, END_MARKER);
+            if (marker_pos != NULL) {
+                // Remove end marker from response
+                *marker_pos = '\0';
+                break;
+            }
+        }
         // Display command output
-        printf("%s", buffer);
+        printf("%s", response);
     }
 }
 
