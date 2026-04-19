@@ -9,7 +9,7 @@
 void client_shell(int sockfd) {
     char buffer[1024];
     while (1) {
-        printf("shel> ");
+        printf("shell> ");
 
         // Get command from user
         if (fgets(buffer, sizeof(buffer), stdin) == NULL) break;

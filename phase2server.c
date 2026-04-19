@@ -19,10 +19,17 @@
 
 int copy_fd(int in, int out) {
 	char buf[MAXLEN];
-	int n = read(in, buf, sizeof(buf));
-	if (n < 0) return -1;
-	if (n == 0) return 0;
-	if (write(out, buf, n) < 0) return -1;
+
+	while (1) {
+		int n = read(in, buf, sizeof(buf));
+		if (n < 0) return -1;
+		if (n == 0) return 0;
+		while (n > 0) {
+			int m = write(out, buf, n);
+			if (m < 0) return -1;
+			n -= m;
+		}
+	}
 	return 0;
 }
 
@@ -504,46 +511,49 @@ void shell(int sockfd) {
 }
 
 int main() {
-	// Create a socket
-	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	if (sockfd < 0) {
-		perror("socket");
-		return 1;
+		// Create a socket
+		int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+		if (sockfd < 0) {
+			perror("socket");
+			return 1;
+		}
+
+		// Define server address
+		struct sockaddr_in server_addr;
+		int addrlen = sizeof(server_addr);
+		server_addr.sin_family = AF_INET;
+		server_addr.sin_port = htons(PORT);
+		server_addr.sin_addr.s_addr = INADDR_ANY;
+
+		// Bind the socket to the address
+		if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+			perror("bind");
+			close(sockfd);
+			return 1;
+		}
+
+		// Listen for incoming connections
+		if (listen(sockfd, 3) < 0) {
+			perror("listen");
+			close(sockfd);
+			return 1;
+		}
+
+	while (1) {
+		// Accept incoming connections
+		int client_sockfd;
+		if ((client_sockfd = accept(sockfd, (struct sockaddr *)&server_addr, &addrlen)) < 0) {
+			perror("accept");
+			close(sockfd);
+			return 1;
+		}
+
+		// Start the shell
+		shell(client_sockfd);
+
+		// Close the socket
+		close(client_sockfd);
 	}
-
-	// Define server address
-	struct sockaddr_in server_addr;
-	int addrlen = sizeof(server_addr);
-	server_addr.sin_family = AF_INET;
-	server_addr.sin_port = htons(PORT);
-	server_addr.sin_addr.s_addr = INADDR_ANY;
-
-	// Bind the socket to the address
-	if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-		perror("bind");
-		close(sockfd);
-		return 1;
-	}
-
-	// Listen for incoming connections
-	if (listen(sockfd, 3) < 0) {
-		perror("listen");
-		close(sockfd);
-		return 1;
-	}
-
-	// Accept incoming connections
-	int client_sockfd;
-	if ((client_sockfd = accept(sockfd, (struct sockaddr *)&server_addr, &addrlen)) < 0) {
-		perror("accept");
-		close(sockfd);
-		return 1;
-	}
-
-	// Start the shell
-	shell(client_sockfd);
-
-	// Close the socket
-	close(client_sockfd);
+	close(sockfd);
 	return 0;
 }
