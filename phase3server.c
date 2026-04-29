@@ -529,6 +529,15 @@ void shell(int sockfd) {
 	}
 }
 
+void *client_thread(void *arg) {
+	int client_sockfd = *(int *)arg;
+	free(arg);
+
+	shell(client_sockfd);
+	close(client_sockfd);
+	return NULL;
+}
+
 int main() {
 		// Create a socket
 		int sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -539,7 +548,7 @@ int main() {
 
 		// Define server address
 		struct sockaddr_in server_addr;
-		int addrlen = sizeof(server_addr);
+		socklen_t addrlen = sizeof(server_addr);
 		server_addr.sin_family = AF_INET;
 		server_addr.sin_port = htons(PORT);
 		server_addr.sin_addr.s_addr = INADDR_ANY;
@@ -567,11 +576,24 @@ int main() {
 			return 1;
 		}
 
-		// Start the shell
-		shell(client_sockfd);
+		int *client_arg = malloc(sizeof(int));
+		if (client_arg == NULL) {
+			perror("malloc");
+			close(client_sockfd);
+			continue;
+		}
 
-		// Close the socket
-		close(client_sockfd);
+		*client_arg = client_sockfd;
+
+		pthread_t thread;
+		if (pthread_create(&thread, NULL, client_thread, client_arg) != 0) {
+			perror("pthread_create");
+			close(client_sockfd);
+			free(client_arg);
+			continue;
+		}
+
+		pthread_detach(thread);
 	}
 
 	close(sockfd);
