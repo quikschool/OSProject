@@ -591,6 +591,7 @@ int main() {
 		return 1;
 	}
 
+	// Semaphore to allow only 1 command to execute at a time
 	command_sem = sem_open(COMMAND_SEM_NAME, O_CREAT, 0600, 1);
 	if (command_sem == SEM_FAILED) {
 		perror("sem_open");
