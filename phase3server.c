@@ -19,8 +19,9 @@
 #define MAXLEN 4096
 #define PORT 8080
 #define END_MARKER "SERVER_OUT_DONE\n"
+#define COMMAND_SEM_NAME "/phase3server_command_sem"
 
-sem_t command_sem;
+sem_t *command_sem = NULL;
 int running = 1;
 
 typedef struct {
@@ -499,8 +500,14 @@ void shell(int sockfd) {
 
 		buffer[strcspn(buffer, "\n")] = '\0';
 
+		if (sem_wait(command_sem) != 0) {
+			perror("sem_wait");
+			break;
+		}
+
 		if (buffer[0] == '\0') {
 			write(sockfd, END_MARKER, strlen(END_MARKER));
+			sem_post(command_sem);
 			continue;
 		}
 
@@ -511,6 +518,7 @@ void shell(int sockfd) {
 		if (cmdCount < 0) {
 			write(sockfd, "parse error\n", 12);
 			write(sockfd, END_MARKER, strlen(END_MARKER));
+			sem_post(command_sem);
 			continue;
 		}
 
@@ -519,22 +527,26 @@ void shell(int sockfd) {
 		if (cmdCount == 1) {
 			if (strcmp(arg0[0], "exit") == 0) {
 				write(sockfd, END_MARKER, strlen(END_MARKER));
+				sem_post(command_sem);
 				break;
 			}
 			if (strcmp(arg0[0], "shutdown") == 0) {
 				running = 0;
 				write(sockfd, END_MARKER, strlen(END_MARKER));
+				sem_post(command_sem);
 				break;
 			}
 			if (strcmp(arg0[0], "cd") == 0) {
 				builtin_cd(arg0);
 				write(sockfd, END_MARKER, strlen(END_MARKER));
+				sem_post(command_sem);
 				continue;
 			}
 		}
 
 		runCmdsRemote(args, cmdIndex, cmdCount, sockfd);
 		write(sockfd, END_MARKER, strlen(END_MARKER));
+		sem_post(command_sem);
 	}
 }
 
@@ -579,9 +591,9 @@ int main() {
 		return 1;
 	}
 
-	// Semaphore to allow only 1 command to execute at a time
-	if (sem_init(&command_sem, 0, 1) != 0) {
-		perror("sem_init");
+	command_sem = sem_open(COMMAND_SEM_NAME, O_CREAT, 0600, 1);
+	if (command_sem == SEM_FAILED) {
+		perror("sem_open");
 		close(sockfd);
 		return 1;
 	}
@@ -632,7 +644,7 @@ int main() {
 		pthread_detach(thread);
 	}
 
-	sem_destroy(&command_sem);
+	sem_close(command_sem);
 	close(sockfd);
 	return 0;
 }
