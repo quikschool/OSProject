@@ -13,12 +13,21 @@
 #include <pwd.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <semaphore.h>
+
 #define MAXPIPE 3
 #define MAXLEN 4096
 #define PORT 8080
 #define END_MARKER "SERVER_OUT_DONE\n"
 
+sem_t command_sem;
 int running = 1;
+
+typedef struct {
+	int sockfd;
+	int cwd_fd;
+	char cwd_path[MAXLEN];
+} session_t;
 
 int copy_fd(int in, int out) {
 	char buf[MAXLEN];
@@ -542,33 +551,40 @@ void *client_thread(void *arg) {
 }
 
 int main() {
-		// Create a socket
-		int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-		if (sockfd < 0) {
-			perror("socket");
-			return 1;
-		}
+	// Create a socket
+	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd < 0) {
+		perror("socket");
+		return 1;
+	}
 
-		// Define server address
-		struct sockaddr_in server_addr;
-		socklen_t addrlen = sizeof(server_addr);
-		server_addr.sin_family = AF_INET;
-		server_addr.sin_port = htons(PORT);
-		server_addr.sin_addr.s_addr = INADDR_ANY;
+	// Define server address
+	struct sockaddr_in server_addr;
+	socklen_t addrlen = sizeof(server_addr);
+	server_addr.sin_family = AF_INET;
+	server_addr.sin_port = htons(PORT);
+	server_addr.sin_addr.s_addr = INADDR_ANY;
 
-		// Bind the socket to the address
-		if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-			perror("bind");
-			close(sockfd);
-			return 1;
-		}
+	// Bind the socket to the address
+	if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+		perror("bind");
+		close(sockfd);
+		return 1;
+	}
 
-		// Listen for incoming connections
-		if (listen(sockfd, 3) < 0) {
-			perror("listen");
-			close(sockfd);
-			return 1;
-		}
+	// Listen for incoming connections
+	if (listen(sockfd, 3) < 0) {
+		perror("listen");
+		close(sockfd);
+		return 1;
+	}
+
+	// Semaphore to allow only 1 command to execute at a time
+	if (sem_init(&command_sem, 0, 1) != 0) {
+		perror("sem_init");
+		close(sockfd);
+		return 1;
+	}
 
 	while (running) {
 		// Accept incoming connections
@@ -579,14 +595,30 @@ int main() {
 			return 1;
 		}
 
-		int *client_arg = malloc(sizeof(int));
+		session_t *client_arg = malloc(sizeof(session_t));
 		if (client_arg == NULL) {
 			perror("malloc");
 			close(client_sockfd);
 			continue;
 		}
 
-		*client_arg = client_sockfd;
+		// Defining the current session struct
+		client_arg->sockfd = client_sockfd;
+		client_arg->cwd_fd = open(".", O_RDONLY | O_DIRECTORY);
+		if (client_arg->cwd_fd < 0) {
+			perror("open");
+			close(client_sockfd);
+			free(client_arg);
+			continue;
+		}
+
+		if (getcwd(client_arg->cwd_path, sizeof(client_arg->cwd_path)) == NULL) {
+			perror("getcwd");
+			close(client_sockfd);
+			close(client_arg->cwd_fd);
+			free(client_arg);
+			continue;
+		}
 
 		pthread_t thread;
 		if (pthread_create(&thread, NULL, client_thread, client_arg) != 0) {
@@ -600,6 +632,7 @@ int main() {
 		pthread_detach(thread);
 	}
 
+	sem_destroy(&command_sem);
 	close(sockfd);
 	return 0;
 }
