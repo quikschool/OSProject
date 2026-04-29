@@ -533,7 +533,10 @@ void *client_thread(void *arg) {
 	int client_sockfd = *(int *)arg;
 	free(arg);
 
+	// Start the shell
 	shell(client_sockfd);
+
+	// Close the socket
 	close(client_sockfd);
 	return NULL;
 }
@@ -593,6 +596,7 @@ int main() {
 			continue;
 		}
 
+		// For resource cleanup upon after thread close
 		pthread_detach(thread);
 	}
 
