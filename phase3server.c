@@ -14,6 +14,8 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <semaphore.h>
+#include <linux/fcntl.h>
+#include <linux/limits.h>
 
 #define MAXPIPE 3
 #define MAXLEN 4096
