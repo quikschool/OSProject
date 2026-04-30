@@ -537,9 +537,9 @@ int main() {
 			return 1;
 		}
 
-		// Define server address
-		struct sockaddr_in server_addr;
-		int addrlen = sizeof(server_addr);
+	// Define server address
+	struct sockaddr_in server_addr;
+	socklen_t addrlen = sizeof(server_addr);
 		server_addr.sin_family = AF_INET;
 		server_addr.sin_port = htons(PORT);
 		server_addr.sin_addr.s_addr = INADDR_ANY;
