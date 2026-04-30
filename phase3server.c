@@ -21,7 +21,7 @@
 #define END_MARKER "SERVER_OUT_DONE\n"
 #define COMMAND_SEM_NAME "/phase3server_command_sem"
 
-sem_t *command_sem = NULL;
+sem_t command_sem;
 int running = 1;
 
 typedef struct {
@@ -629,11 +629,6 @@ void shell(session_t *sess) {
 
 		buffer[strcspn(buffer, "\n")] = '\0';
 
-		if (sem_wait(command_sem) != 0) {
-			perror("sem_wait");
-			break;
-		}
-
 		if (buffer[0] == '\0') {
 			write(sess->sockfd, END_MARKER, strlen(END_MARKER));
 			continue;
@@ -721,12 +716,7 @@ int main() {
 	}
 
 	// Semaphore to allow only 1 command to execute at a time
-	command_sem = sem_open(COMMAND_SEM_NAME, O_CREAT, 0600, 1);
-	if (command_sem == SEM_FAILED) {
-		perror("sem_open");
-		close(sockfd);
-		return 1;
-	}
+	sem_init(&command_sem, 1, 1);
 
 	while (running) {
 		// Accept incoming connections
@@ -774,7 +764,7 @@ int main() {
 		pthread_detach(thread);
 	}
 
-	sem_close(command_sem);
+	sem_close(&command_sem);
 	close(sockfd);
 	return 0;
 }
