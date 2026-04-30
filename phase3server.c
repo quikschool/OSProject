@@ -635,12 +635,7 @@ void shell(session_t *sess) {
 		}
 
 		if (buffer[0] == '\0') {
-<<<<<<< Updated upstream
-			write(sockfd, END_MARKER, strlen(END_MARKER));
-			sem_post(command_sem);
-=======
 			write(sess->sockfd, END_MARKER, strlen(END_MARKER));
->>>>>>> Stashed changes
 			continue;
 		}
 
@@ -649,14 +644,8 @@ void shell(session_t *sess) {
 		int cmdIndex[MAXPIPE+1];
 		int cmdCount = parseCmds(buffer, args, cmdIndex);
 		if (cmdCount < 0) {
-<<<<<<< Updated upstream
-			write(sockfd, "parse error\n", 12);
-			write(sockfd, END_MARKER, strlen(END_MARKER));
-			sem_post(command_sem);
-=======
 			write(sess->sockfd, "parse error\n", 12);
 			write(sess->sockfd, END_MARKER, strlen(END_MARKER));
->>>>>>> Stashed changes
 			continue;
 		}
 
@@ -665,27 +654,12 @@ void shell(session_t *sess) {
 		sem_wait(&command_sem);
 		if (cmdCount == 1) {
 			if (strcmp(arg0[0], "exit") == 0) {
-<<<<<<< Updated upstream
-				write(sockfd, END_MARKER, strlen(END_MARKER));
-				sem_post(command_sem);
-=======
 				write(sess->sockfd, END_MARKER, strlen(END_MARKER));
 				sem_post(&command_sem);
->>>>>>> Stashed changes
 				break;
 			}
 			if (strcmp(arg0[0], "shutdown") == 0) {
 				running = 0;
-<<<<<<< Updated upstream
-				write(sockfd, END_MARKER, strlen(END_MARKER));
-				sem_post(command_sem);
-				break;
-			}
-			if (strcmp(arg0[0], "cd") == 0) {
-				builtin_cd(arg0);
-				write(sockfd, END_MARKER, strlen(END_MARKER));
-				sem_post(command_sem);
-=======
 				write(sess->sockfd, END_MARKER, strlen(END_MARKER));
 				sem_post(&command_sem);
 				break;
@@ -694,20 +668,13 @@ void shell(session_t *sess) {
 				builtin_cd(sess, arg0);
 				write(sess->sockfd, END_MARKER, strlen(END_MARKER));
 				sem_post(&command_sem);
->>>>>>> Stashed changes
 				continue;
 			}
 		}
 
-<<<<<<< Updated upstream
-		runCmdsRemote(args, cmdIndex, cmdCount, sockfd);
-		write(sockfd, END_MARKER, strlen(END_MARKER));
-		sem_post(command_sem);
-=======
 		runCmdsRemote(sess, args, cmdIndex, cmdCount);
 		sem_post(&command_sem);
 		write(sess->sockfd, END_MARKER, strlen(END_MARKER));
->>>>>>> Stashed changes
 	}
 }
 
